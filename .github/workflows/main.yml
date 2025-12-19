@@ -1,0 +1,130 @@
+# .github/workflows/main.yml
+name: RANA Bot CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --cov=. --cov-report=xml
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Check code quality
+      run: |
+        pip install black flake8
+        black --check .
+        flake8 .
+    
+    - name: Create build package
+      run: |
+        mkdir -p dist
+        tar -czf dist/rana_bot_$(date +%Y%m%d).tar.gz \
+          SYSTEM_CORE.py \
+          requirements.txt \
+          .env.example \
+          plugins/ \
+          data/ \
+          configs/
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to Server
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Deploy to server
+        rsync -avz --exclude='.git' --exclude='__pycache__' \
+          ./ $SERVER_USER@$SERVER_IP:/opt/rana_bot/
+        
+        # Restart service
+        ssh $SERVER_USER@$SERVER_IP "sudo systemctl restart rana-bot"
+
+  backup:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Backup Database
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Create backup on server
+        ssh $SERVER_USER@$SERVER_IP "
+          mkdir -p /backups/rana_bot
+          cd /opt/rana_bot
+          tar -czf /backups/rana_bot/backup_$(date +%Y%m%d_%H%M%S).tar.gz \
+            data/ configs/ logs/
+        "
+        
+        # Sync to GitHub Releases
+        ssh $SERVER_USER@$SERVER_IP "
+          LATEST_BACKUP=$(ls -t /backups/rana_bot/ | head -1)
+          curl -X POST \
+            -H \"Authorization: token ${{ secrets.GITHUB_TOKEN }}\" \
+            -H \"Content-Type: application/gzip\" \
+            --data-binary @/backups/rana_bot/\$LATEST_BACKUP \
+            \"https://uploads.github.com/repos/${{ github.repository }}/releases/tags/backup/assets?name=\$LATEST_BACKUP\"
+        "
