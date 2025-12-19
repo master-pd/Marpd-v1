@@ -1,0 +1,49 @@
+# .github/workflows/performance-test.yml
+name: Performance Test
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+
+jobs:
+  performance:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run performance tests
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Get performance metrics
+        METRICS=$(ssh $SERVER_USER@$SERVER_IP "
+          cd /opt/rana_bot
+          python -c \"
+          import psutil, json
+          metrics = {
+            'cpu': psutil.cpu_percent(),
+            'memory': psutil.virtual_memory().percent,
+            'disk': psutil.disk_usage('/').percent,
+            'users': 0,
+            'messages': 0
+          }
+          print(json.dumps(metrics))
+          \"
+        ")
+        
+        echo "Metrics: $METRICS"
+        
+        # Send to monitoring service
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "$METRICS" \
+          https://api.monitoring-service.com/metrics
