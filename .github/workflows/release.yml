@@ -1,0 +1,42 @@
+# .github/workflows/release.yml
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        
+    - name: Generate changelog
+      run: |
+        git log --oneline $(git describe --tags --abbrev=0)..HEAD > changelog.txt
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ github.ref_name }}
+        body_path: changelog.txt
+        draft: false
+        prerelease: false
+        files: |
+          SYSTEM_CORE.py
+          requirements.txt
+          .env.example
+          
+    - name: Notify Telegram
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"chat_id\":\"$TELEGRAM_CHAT_ID\",\"text\":\"🎉 *New Release Published*\n\nVersion: ${{ github.ref_name }}\n\nDownload: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}\",\"parse_mode\":\"Markdown\"}" \
+          https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage
