@@ -1,0 +1,42 @@
+# .github/workflows/auto-deploy-plugins.yml
+name: Auto Deploy Plugins
+
+on:
+  push:
+    paths:
+      - 'plugins/**'
+      - 'configs/plugins.json'
+
+jobs:
+  deploy-plugins:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy plugins to server
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Sync only plugins
+        rsync -avz plugins/ $SERVER_USER@$SERVER_IP:/opt/rana_bot/plugins/
+        
+        # Send reload signal
+        ssh $SERVER_USER@$SERVER_IP "
+          cd /opt/rana_bot
+          touch plugins/.reload
+        "
+        
+        # Notify
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"✅ Plugins deployed and reloaded\",\"parse_mode\":\"Markdown\"}" \
+          https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage
