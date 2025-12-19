@@ -1,0 +1,73 @@
+# .github/workflows/cron-jobs.yml
+name: Scheduled Cron Jobs
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+    - cron: '0 6 * * *'     # Daily at 6 AM
+    - cron: '0 0 * * 0'     # Weekly on Sunday
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.repository == 'your-username/rana-bot'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run cleanup script
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Run cleanup on server
+        ssh $SERVER_USER@$SERVER_IP "
+          cd /opt/rana_bot
+          
+          # Clean old logs (older than 30 days)
+          find logs/ -name '*.log' -mtime +30 -delete
+          
+          # Clean temp files
+          find temp/ -name '*' -mtime +1 -delete
+          
+          # Clean old backups (keep last 30)
+          ls -t /backups/rana_bot/*.tar.gz | tail -n +31 | xargs rm -f
+          
+          # Database optimization
+          python -c \"from DATABASE_MANAGER import DatabaseFactory; db = DatabaseFactory.create_database(); db.optimize()\"
+        "
+        
+  health-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check bot health
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Check if bot is running
+        if ! ssh $SERVER_USER@$SERVER_IP "systemctl is-active --quiet rana-bot"; then
+          # Restart if not running
+          ssh $SERVER_USER@$SERVER_IP "systemctl restart rana-bot"
+          
+          # Send alert
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"⚠️ Bot was down, restarted automatically\",\"parse_mode\":\"Markdown\"}" \
+            https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage
+        fi
