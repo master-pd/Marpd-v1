@@ -1,0 +1,38 @@
+# .github/workflows/auto-update.yml
+name: Auto Update System
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Check for updates
+      run: |
+        python check_updates.py
+        
+    - name: Update dependencies
+      run: |
+        pip list --outdated --format=freeze | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 pip install -U
+        
+    - name: Update requirements.txt
+      run: |
+        pip freeze > requirements.txt
+        
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
+      with:
+        title: "Auto-update dependencies $(date +%Y-%m-%d)"
+        body: |
+          Automatic dependency updates:
+          - Updated outdated packages
+          - Updated requirements.txt
+          - Security patches applied
+        branch: auto-update-$(date +%Y%m%d)
+        commit-message: "chore: auto-update dependencies"
