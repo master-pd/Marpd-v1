@@ -1,0 +1,41 @@
+# .github/workflows/monitor-payments.yml
+name: Monitor Payments
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+
+jobs:
+  check-payments:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check pending payments
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        SERVER_IP: ${{ secrets.SERVER_IP }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+        
+        # Get pending payments count
+        PENDING=$(ssh $SERVER_USER@$SERVER_IP "
+          cd /opt/rana_bot
+          python -c \"
+          from DATABASE_MANAGER import DatabaseFactory
+          db = DatabaseFactory.create_database()
+          result = db.cursor.execute('SELECT COUNT(*) FROM payments WHERE status=\"pending\"').fetchone()
+          print(result[0] if result else 0)
+          \"
+        ")
+        
+        if [ "$PENDING" -gt 0 ]; then
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"💰 *Payment Alert*\n\nPending payments: $PENDING\n\nCheck: http://your-server/payments\",\"parse_mode\":\"Markdown\"}" \
+            https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage
+        fi
