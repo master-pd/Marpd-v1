@@ -1,0 +1,12 @@
+def on_plugin_load(core):
+    print("My Plugin Loaded")
+    return {"plugin": "name"}
+
+def handle_event(event_name, data=None):
+    if event_name == "my_event":
+        # Your code here
+        return {"result": "success"}
+    return None
+
+
+new file a dite Hobe 

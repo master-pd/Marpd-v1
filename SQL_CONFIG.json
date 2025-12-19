@@ -1,0 +1,65 @@
+{
+  "database": {
+    "type": "sqlite",
+    "path": "data/bot_database.db",
+    
+    "postgresql": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "rana_bot",
+      "user": "postgres",
+      "password": "",
+      "pool_size": 10,
+      "max_overflow": 20
+    },
+    
+    "mysql": {
+      "host": "localhost",
+      "port": 3306,
+      "database": "rana_bot",
+      "user": "root",
+      "password": "",
+      "pool_size": 10
+    },
+    
+    "sqlite": {
+      "path": "data/bot_database.db",
+      "journal_mode": "WAL",
+      "cache_size": -2000,
+      "synchronous": "NORMAL"
+    }
+  },
+  
+  "tables": {
+    "users": {
+      "auto_vacuum": true,
+      "optimize_on_start": true
+    },
+    
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)",
+      "CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)",
+      "CREATE INDEX IF NOT EXISTS idx_user_bots_user_id ON user_bots(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_credits_user_id ON credits(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
+      "CREATE INDEX IF NOT EXISTS idx_ai_memory_hash ON ai_memory(pattern_hash)",
+      "CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_scheduled_messages_time ON scheduled_messages(scheduled_time)"
+    ]
+  },
+  
+  "maintenance": {
+    "auto_backup_hours": 24,
+    "vacuum_on_start": true,
+    "optimize_after_rows": 10000,
+    "cleanup_old_logs_days": 30,
+    "archive_conversations_days": 90
+  },
+  
+  "performance": {
+    "connection_timeout": 30,
+    "query_timeout": 10,
+    "max_connections": 100,
+    "statement_cache_size": 100
+  }
+}
